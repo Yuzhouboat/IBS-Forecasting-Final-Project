@@ -1,0 +1,278 @@
+---
+title: "Realized Volatility Forecasting with Leaverage Effect"
+author: "Yuzhou Liu, Qinghan Shen, Yukun Xia, Zihao Song, Jiaren Ma"
+date: "12/8/2018"
+output: pdf_document
+---
+#Excutive Summary
+asdkjfhajksdhf
+asdfkjhasdjkfhjkasd
+
+```{r, echo=FALSE, message=FALSE}
+#Packages needed
+library(forecast)
+library(zoo)
+library(plyr)
+library(urca)
+library(rugarch)
+```
+
+#Data Structure
+aalsdkfklasdjf
+asdfjhadskjfhkjadsf
+adskfjhjkasdhfjkads
+```{r}
+SP500.raw <- read.csv("../data/S&P500.csv")
+VIX.raw <- read.csv("../data/Vix.csv")
+ReVol.raw <- read.csv("../data/RealizedVol.csv")
+```
+
+#Data Preprocessing
+asdkjfhakjsdhf
+```{r}
+ReVol.df <- ReVol.raw[-(1:2),1:2]
+colnames(ReVol.df) <- c("Date", "Vol")
+ReVol.df$Date <- as.Date(ReVol.df$Date, format = "%Y%m%d")
+ReVol.df$Vol <- sqrt(as.numeric(as.character(ReVol.df$Vol)))
+ReVol.df <- ReVol.df[!is.na(ReVol.df$Vol),]
+ReVol.ts <- zoo(ReVol.df$Vol, ReVol.df$Date)
+
+dates.sp <- as.Date(SP500.raw$Date,format="%Y-%m-%d")
+# generate close price time series
+SP500.ts <- zoo(SP500.raw$Adj.Close,dates.sp)
+
+# generate return time series
+SPret.ts <- diff(log(SP500.ts))
+
+# generate vix time series
+dates.vix <- as.Date(VIX.raw$Date,format="%Y-%m-%d")
+VIX.ts <- zoo(VIX.raw$Adj.Close,dates.vix)
+
+# Alien the date
+startdate <- time(ReVol.ts)[1]
+SPret.ts <- window(SPret.ts, start = startdate)
+VIX.ts <- window(VIX.ts, start = startdate)
+```
+#GARCH Model 
+```{r}
+# set up for GARCH(1,1) estimation
+# Note: flag on include.mean
+spec <- ugarchspec(variance.model=list(model="sGARCH",garchOrder=c(1,1)),
+                   mean.model=list(include.mean=FALSE,armaOrder=c(0,0)))
+# fit models
+fit <- ugarchfit(spec = spec, data=rsp)
+# show(fit)
+sresid.ts <- residuals(fit,standardize=TRUE)
+# fitted volatility (in std units, xts - convert to variance and zoo)
+garchVolFcast.zoo <- zoo(sigma(fit))^2
+
+# compare the two forecasts
+fcompare <- FALSE
+if(fcompare){
+plot(as.vector(volfcast.zoo),as.vector(garchVolFcast.zoo),
+     xlab="Filter",ylab="GARCH(1,1)")
+  grid()
+} else { # or do a nice plot of vol and SP returns
+  plot(rsp,ylim=c(-1,1),xlab='year',ylab='returns and std')
+  lines(sqrt(garchVolFcast.zoo)*sqrt(250),col='red')
+grid()
+}
+```
+
+
+```{r}
+SPret.tra <- 
+# Specifications
+spec <- ugarchspec(variance.model=list(garchOrder=c(1,1)),
+                   mean.model=list(armaOrder=c(0,0)))
+fit <- ugarchfit(spec = spec, data=SPret.ts)
+show(fit)
+# linear model residuals
+resid.ts  <- residuals(fit)
+# standardized 
+sresid.ts <- residuals(fit,standardize=TRUE)
+# linear model fit
+fcastfit <- fitted(fit) 
+# fitted volatility
+volfcast.zoo <- zoo(sigma(fit))
+
+
+plot(rets.ts,ylim=c(-1,1),xlab='Year',ylab='Return and Std')
+lines(sqrt(250)*(volfcast.zoo),col='red')
+grid()
+```
+
+
+
+#Relized Vol Forecasting
+###Basic check of Vol
+```{r}
+#Unit Root Test
+summary(ur.df(ReVol.ts, type = "none"))
+#ACF
+Acf(as.numeric(ReVol.ts))
+#Pacf
+Pacf(as.numeric(ReVol.ts))
+
+#Reg Data prapration
+ma6.ts <-  rollmean(ReVol.ts, k=6, align="right")
+Sign <- sign(SPret.ts) >0
+ret_sign <- Sign * SPret.ts
+
+lagvol <- cbind(ReVol.ts,
+                lag(ReVol.ts,-1,na.pad=TRUE),
+                lag(ReVol.ts,-2,na.pad=TRUE), 
+                lag((ma6.ts),-2,na.pad=TRUE),
+                SPret.ts,
+                Sign,
+                ret_sign)
+colnames(lagvol) <- c("vol", "volL1", "volL2", "ma6L2", "Return", "Sign", "Return*Sign")
+
+lagvol <- lagvol[complete.cases(lagvol),]
+
+# Data Partitioning
+ReVol.tra <- window(lagvol, end = "2015-01-02")
+ReVol.va <- window(lagvol, start = "2015-01-03",
+                   end = "2017-12-04")
+```
+
+#GRACH Model as Benchmark
+```{r}
+# Specifications
+spec <- ugarchspec(variance.model=list(garchOrder=c(1,1)),
+                   mean.model=list(armaOrder=c(0,0)))
+fittrain <- ugarchfit(spec = spec, data=ReVol.tra$Return)
+
+#forecast
+setfixed(spec) <- as.list(coef(fittrain))
+ugarchfilter <- ugarchfilter(spec=spec,data=ReVol.va$Return)
+
+# fitted volatility
+volfcast.grach<- zoo(sigma(ugarchfilter))
+
+accuracy(na.locf(as.ts(ReVol.va$vol)), na.locf(as.ts(volfcast.grach)))
+
+plot(ReVol.va$vol)
+lines(volfcast.grach, col="red")
+lines(zoo(midas.ret_sign.pre, time(ReVol.va$vol)), col="blue")
+lines(a, col = "green")
+
+
+a <- window(VIX.ts, start = "2015-01-05")
+a <- a/sqrt(252)/100
+```
+
+### Benchmark
+```{r}
+#ARMA model
+ReVol.arima <- auto.arima(zoo(ReVol.tra[,1], time(ReVol.tra)),d=0,ic="bic",seasonal=FALSE)
+#Best Arima model is AR2
+arima.ben <- lm(vol ~ volL1 + volL2,data=ReVol.tra)
+# MA(6)model
+midas.ben <- lm(vol ~ volL1 + ma6L2,data=ReVol.tra)
+
+
+arima.ben.pre <- predict(arima.ben, ReVol.va)
+arima.ben.res <- ReVol.va$vol- arima.ben.pre
+
+midas.ben.pre <- predict(midas.ben, ReVol.va)
+midas.ben.res  <- ReVol.va$vol- midas.ben.pre
+
+accuracy(arima.ben.pre, ReVol.va$vol)
+accuracy(midas.ben.pre, ReVol.va$vol)
+print("Diebold/Mariano ARMA versus ARIMA")
+dm.test(na.locf(as.ts(arima.ben.res)), na.locf(as.ts(midas.ben.res)))
+#MIDAS model for Relized Vol is better
+```
+
+###Leaverage Effect as Dummy
+```{r}
+midas.dummy <- lm(vol ~ volL1 + ma6L2 + Sign,data=ReVol.tra)
+midas.dummy.pre <- predict(midas.dummy, ReVol.va)
+midas.dummy.res <- ReVol.va$vol- midas.dummy.pre
+accuracy(midas.dummy.pre, ReVol.va$vol)
+print("Diebold/Mariano ARMA versus ARIMA")
+dm.test(na.locf(as.ts(midas.dummy.res)), na.locf(as.ts(midas.ben.res)))
+```
+###Leaverage Effect as Return
+```{r}
+midas.return <- lm(vol ~ volL1 + ma6L2 + Return, data=ReVol.tra)
+midas.return.pre <- predict(midas.return, ReVol.va)
+midas.return.res <- ReVol.va$vol- midas.return.pre
+accuracy(midas.return.pre, ReVol.va$vol)
+print("Diebold/Mariano ARMA versus ARIMA")
+dm.test(na.locf(as.ts(midas.return.res)), na.locf(as.ts(midas.dummy.res)))
+```
+###Return and Dummy
+```{r}
+midas.ret_sign <- lm(vol ~ volL1 + ma6L2 + Return + `Return*Sign`, data=ReVol.tra)
+midas.ret_sign.pre <- predict(midas.ret_sign, ReVol.va)
+midas.ret_sign.res <- ReVol.va$vol- midas.ret_sign.pre
+accuracy(midas.ret_sign.pre, ReVol.va$vol)
+print("Diebold/Mariano ARMA versus ARIMA")
+dm.test(na.locf(as.ts(midas.ret_sign.res)), na.locf(as.ts(midas.return.res)))
+```
+
+###Model Selection/Evaluation
+sadfkjasdjfhjkahsdf
+asdkfjhajksdhfkjadsf
+asdkfjhasdkjhfkjasdhf
+adskfhjkashdfjadsf
+
+#Applicaiton 
+###Vix comparation
+sdafkjshadfjkhasdfsadfjkh
+asjhfkjshdfasdkfjasdkjhf\
+sdkfgkajsdhfjadsf
+
+###Control Vol
+```{r}
+# Build valid sample volatility forecast
+vol.fcast <- predict( volTrain.mod, lagvolValid)
+# Adjust this to monthly value (daily -> monthly)
+vol.fcast <- sqrt(252)*vol.fcast
+# set for 10 percent annual standard deviation
+target <- 0.2
+# now portfolio weight vector
+weight <- target/vol.fcast
+# constant portfolio benchmark
+mweight <- mean(weight)
+
+# dynamic monthly portfolio (assuming 3 percent/year interest)
+pret  <-  lagvolValid[,5]*weight  + 0.03/12.*(1-weight)
+pretConstant <-  lagvolValid[,5]*mweight + 0.03/12 *(1-mweight)
+pretEquity   <-  lagvolValid[,5]* 1
+
+# Volatility for portfolios (adjust for days of the month)
+pstd  <-  sqrt(lagvolValid[,6])*lagvolValid[,1]*weight
+pstdConstant <-  sqrt(lagvolValid[,6])*lagvolValid[,1]*mweight
+pstdEquity   <-  sqrt(lagvolValid[,6])*lagvolValid[,1]*1
+
+# Convert to annual values (like target)
+pstd         <- sqrt(12)*pstd
+pstdConstant <- sqrt(12)*pstdConstant
+pstdEquity   <- sqrt(12)*pstdEquity
+
+# Look at the variability of returns around volatility targets
+print("Standard deviations and sd(standard deviations)")
+print(cbind(mean(pstd),sd(pstd)))
+print(cbind(mean(pstdConstant),sd(pstdConstant)))
+print(cbind(mean(pstdEquity),sd(pstdEquity)))
+ 
+# General mean and return for returns (annualized)           
+print("mean and standard deviations for returns (annualized)")            
+print(cbind(12*mean(pret),sqrt(12)*sd(pret)))
+print(cbind(12*mean(pretConstant),sqrt(12)*sd(pretConstant)))
+print(cbind(12*mean(pretEquity),sqrt(12)*sd(pretEquity)))
+
+# Sharpe ratios
+print("Sharpe ratios (annualized)")
+print( (12*mean(pret)-0.03)/( sqrt(12)*sd(pret)))
+print( (12*mean(pretConstant)-0.03)/( sqrt(12)*sd(pretConstant)))       
+print( (12*mean(pretEquity)-0.03)/( sqrt(12)*sd(pretEquity)))       
+
+plot(pstd,ylim=c(0,0.8),xlab="year",ylab="annualized std")
+lines(pstdEquity,col="red")
+grid()
+```
+
