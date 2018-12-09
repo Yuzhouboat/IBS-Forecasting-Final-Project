@@ -1,9 +1,11 @@
 ---
 title: "Enhanced GARCH Model for SP500 Volatility"
-subtitle: 'ECON/FIN250A Final Project'
 author: "Yuzhou Liu, Qinghan Shen, Yukun Xia, Zihao Song, Jiaren Ma"
 date: "12/8/2018"
-output: pdf_document
+output:
+  word_document: default
+  pdf_document: default
+subtitle: ECON/FIN250A Final Project
 ---
 #Topic Introduction
 Nowadays, volatility is widely used as a prime perimeter for financial risk management. Risk parity funds tend to hedge their exposure using derivatives when the market volatility exceeds some certain levels. The traditional GARCH model for volatility forecasting implies that Volatility will risk after a large movement in markets regardless of the direction of the movement. However, market experiences show that VIX index, which is calculated using the IV of index option, tend to rise when market crushes, and decrease when market rises. This phenomenon could be explained by the leverage effect, and our goal is to add the leverage effect to the traditional model and test whether our model is more accurate in forecasting the real volatility of the market for the period than the traditional GARCH model and the VIX index. 
@@ -63,6 +65,7 @@ VIX.ts <- window(VIX.ts, start = startdate)
 
 #Relized Volatility Forecasting
 ###Basic check for Relized Vol series
+
 &&&2 The seasonal and trend or stationary from its plot?
 ```{r, echo=FALSE, dpi=300, fig.width=10, fig.height=7}
 plot(ReVol.ts, ylim = c(0,0.06), cex.lab = 1.5, cex.main = 2,
@@ -90,6 +93,7 @@ Pacf(as.numeric(ReVol.ts),  cex.lab = 1.5, cex.main = 2,
      main = "Partial Autocorrelation Plot of SP500 Realized Vol")
 ```
 ###Data Preprocessing
+
 &&&5 some descripe of the process and train and validation ?
 ```{r, echo=FALSE}
 ma6.ts <-  rollmean(ReVol.ts, k=6, align="right")
@@ -105,16 +109,17 @@ lagvol <- cbind(ReVol.ts,
                 ret_sign)
 colnames(lagvol) <- c("vol", "volL1", "volL2", "ma6L2","Return", "Sign", "Return*Sign")
 
-lagvol# <- lagvol[complete.cases(lagvol),]
+lagvol <- lagvol[complete.cases(lagvol),]
 
 # Data Partitioning
 ReVol.tra <- window(lagvol, end = "2015-01-02")
 ReVol.va <- window(lagvol, start = "2015-01-03")
 ```
 
-#GRACH Model as Benchmark
+###GRACH Model as Benchmark
+
 &&&6 GARCH Model used here and its forecast result?
-```{r}
+```{r, echo=FALSE}
 # Specifications
 spec <- ugarchspec(variance.model=list(garchOrder=c(1,1)),
                    mean.model=list(armaOrder=c(0,0)))
@@ -145,6 +150,7 @@ lines(volfcast.grach, col="red")
 ```
 
 ### Benchmark Model For Relized Volatility
+
 &&&8 Explain how the two benchmark works and a little explaination of realized vol ?
 ```{r, echo=FALSE}
 #ARMA model
@@ -180,6 +186,7 @@ dm.test(na.locf(as.ts(arima.ben.res)), na.locf(as.ts(midas.ben.res)))
 ```
 
 ###Leverage Effect as Dummy
+
 &&&9 Explain the result?
 ```{r, echo=FALSE}
 midas.dummy <- lm(vol ~ volL1 + ma6L2 + Sign,data=ReVol.tra)
@@ -199,8 +206,9 @@ dm.test(na.locf(as.ts(midas.dummy.res)), na.locf(as.ts(midas.ben.res)))
 ```
 
 ###Leaverage Effect as Return
+
 &&&11 Explain the result?
-```{r}
+```{r, echo=FALSE}
 midas.return <- lm(vol ~ volL1 + ma6L2 + Return, data=ReVol.tra)
 midas.return.pre <- predict(midas.return, ReVol.va)
 midas.return.res <- ReVol.va$vol- midas.return.pre
@@ -218,8 +226,9 @@ dm.test(na.locf(as.ts(midas.return.res)), na.locf(as.ts(midas.dummy.res)))
 ```
 
 ###Return and Dummy
+
 &&&10 Explain the result?
-```{r}
+```{r, echo=FALSE}
 midas.ret_sign <- lm(vol ~ volL1 + ma6L2 + Return + `Return*Sign`, data=ReVol.tra)
 midas.ret_sign.pre <- predict(midas.ret_sign, ReVol.va)
 midas.ret_sign.res <- ReVol.va$vol- midas.ret_sign.pre
@@ -237,6 +246,7 @@ dm.test(na.locf(as.ts(midas.ret_sign.res)), na.locf(as.ts(midas.return.res)))
 ```
 
 ###Model Selection/Evaluation
+
 &&&13 Explain which model is best, and look deep into the model, and some things to notice
 ```{r, echo=FALSE}
 RMSE <- rep(NA,5)
@@ -260,6 +270,7 @@ summary(midas.ret_sign)
 
 #Applicaiton 
 ###Vix comparation
+
 &&&12 Explaination of the strategies ? 
 ```{r, echo=FALSE, dpi=300, fig.width=10, fig.height=7}
 vix.plot <- window(VIX.ts, start = "2015-01-05")/sqrt(252)/100
@@ -277,54 +288,45 @@ legend("topright",
        col=c("black", "red", "blue", "green"),lty=1:1, cex=1.5)
 ```
 
-
 ###Control Vol
-```{r}
-# Build valid sample volatility forecast
-vol.fcast <- predict( volTrain.mod, lagvolValid)
-# Adjust this to monthly value (daily -> monthly)
-vol.fcast <- sqrt(252)*vol.fcast
+
+&&&14 The Logic of this stategies
+```{r, echo=FALSE}
+vol.fcast <- midas.ret_sign.pre
 # set for 10 percent annual standard deviation
-target <- 0.2
+target <- 0.1/sqrt(252)
 # now portfolio weight vector
 weight <- target/vol.fcast
-# constant portfolio benchmark
-mweight <- mean(weight)
 
 # dynamic monthly portfolio (assuming 3 percent/year interest)
-pret  <-  lagvolValid[,5]*weight  + 0.03/12.*(1-weight)
-pretConstant <-  lagvolValid[,5]*mweight + 0.03/12 *(1-mweight)
-pretEquity   <-  lagvolValid[,5]* 1
+pret  <-  252*(ReVol.va[,5]*weight  + 0.03/252 *(1-weight))
+pretEquity   <-  252*(ReVol.va[,5]* 1)
 
-# Volatility for portfolios (adjust for days of the month)
-pstd  <-  sqrt(lagvolValid[,6])*lagvolValid[,1]*weight
-pstdConstant <-  sqrt(lagvolValid[,6])*lagvolValid[,1]*mweight
-pstdEquity   <-  sqrt(lagvolValid[,6])*lagvolValid[,1]*1
-
-# Convert to annual values (like target)
-pstd         <- sqrt(12)*pstd
-pstdConstant <- sqrt(12)*pstdConstant
-pstdEquity   <- sqrt(12)*pstdEquity
+# Volatility for portfolios (day to year)
+pstd  <-  sqrt(252)*ReVol.va[,1]*weight
+pstdEquity   <-  sqrt(252)*ReVol.va[,1]*1
 
 # Look at the variability of returns around volatility targets
 print("Standard deviations and sd(standard deviations)")
 print(cbind(mean(pstd),sd(pstd)))
-print(cbind(mean(pstdConstant),sd(pstdConstant)))
 print(cbind(mean(pstdEquity),sd(pstdEquity)))
  
 # General mean and return for returns (annualized)           
 print("mean and standard deviations for returns (annualized)")            
-print(cbind(12*mean(pret),sqrt(12)*sd(pret)))
-print(cbind(12*mean(pretConstant),sqrt(12)*sd(pretConstant)))
-print(cbind(12*mean(pretEquity),sqrt(12)*sd(pretEquity)))
+print(cbind(mean(pret),sd(pret)))
+print(cbind(mean(pretEquity),sd(pretEquity)))
 
 # Sharpe ratios
 print("Sharpe ratios (annualized)")
-print( (12*mean(pret)-0.03)/( sqrt(12)*sd(pret)))
-print( (12*mean(pretConstant)-0.03)/( sqrt(12)*sd(pretConstant)))       
-print( (12*mean(pretEquity)-0.03)/( sqrt(12)*sd(pretEquity)))       
+print( (mean(pret)-0.03)/sd(pret))
+print( (mean(pretEquity)-0.03)/sd(pretEquity))       
+```
 
-plot(pstd,ylim=c(0,0.8),xlab="year",ylab="annualized std")
+```{r, echo=FALSE, dpi=300, fig.width=10, fig.height=7}
+plot(pstd,ylim=c(0,0.8), cex.lab = 1.5, cex.main = 2,
+     main = "SP500 Realized Volatility vs Vol after Control ",
+     xlab = "Years",
+     ylab = "Annualized Std")
 lines(pstdEquity,col="red")
 grid()
 ```
