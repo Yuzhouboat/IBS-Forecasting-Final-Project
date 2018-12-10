@@ -1,0 +1,58 @@
+---
+title: "Untitled"
+author: "Yuzhou Liu, Qinghan Shen, Yukon Xia, Zihao Song, Jaren Ma"
+date: "12/10/2018"
+output: pdf_document
+---
+###Control Volatility
+
+We use the model to forecast the sp500 volatility; and if the portfolio volatility rises above the maximize level we set, we sell some of the equity positions to deleverage our position and if the portfolio volatility drops below the certain given level, we leverage up our portfolio by buying more equity and investing less risk free assets. 
+
+We simulate the strategy sharp ratio by setting the target portfolio annually Volatility of 5%. Although the strategy successfully control the portfolio volatility close to our target level, the testing results shows that the sharp ratio of using volatility control strategy is significantly lower than that of direct investment, which means that the volatility controlling sacrifices more return to reduce its volatility towards target.
+
+```{r, echo=FALSE}
+vol.fcast <- midas.ret_sign.pre
+# set for 10 percent annual standard deviation
+target <- 0.05/sqrt(252)
+# now portfolio weight vector
+weight <- target/vol.fcast
+mean(weight)
+
+# dynamic portfolio (assuming 3 percent/year interest)
+pret  <-  ReVol.va[,5]*weight  + 0.03/252 *(1-weight)
+pretEquity   <-  ReVol.va[,5]* 1
+
+# Volatility for portfolios (daily to annual)
+pstd  <-  sqrt(252)*ReVol.va[,1]*weight
+pstdEquity   <-  sqrt(252)*ReVol.va[,1]*1
+
+sharp <- rep(NA,2)
+ret.mean <- rep(NA,2)
+ret.sd <- rep(NA,2)
+sd.sd <- rep(NA,2)
+
+ret.mean[1] <- mean(pret)*252
+ret.mean[2] <- mean(pretEquity)*252
+ret.sd[1] <- sd(pret)*sqrt(252)
+ret.sd[2] <- sd(pretEquity)*sqrt(252)
+sd.sd[1] <- sd(pstd)
+sd.sd[2] <-sd(pstdEquity)
+sharp <- (ret.mean-0.03)/ret.sd
+
+pander(data.frame(SharpRatio = sharp,
+                  MeanReturn = ret.mean,
+                  SDReturn = ret.sd,
+                  SDofSD = sd.sd,
+                  row.names = c("Vol Control Method", "Direct Investment")))
+
+```
+
+```{r, echo=FALSE, dpi=300, fig.width=10, fig.height=7}
+plot(pstd,ylim=c(0,0.8), cex.lab = 1.5, cex.main = 2,
+     main = "SP500 Realized Volatility vs Vol after Control ",
+     xlab = "Years",
+     ylab = "Annualized Std")
+lines(pstdEquity,col="red")
+grid()
+```
+
